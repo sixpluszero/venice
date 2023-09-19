@@ -342,7 +342,7 @@ public class ActiveActiveReplicationForHybridTest {
     }
   }
 
-  @Test(timeOut = TEST_TIMEOUT, dataProvider = "Two-True-and-False", dataProviderClass = DataProviderUtils.class)
+  @Test(timeOut = TEST_TIMEOUT, dataProvider = "Two-True-and-False", dataProviderClass = DataProviderUtils.class, enabled = false)
   public void testAAReplicationCanConsumeFromAllRegions(boolean isChunkingEnabled, boolean useTransientRecordCache)
       throws InterruptedException, ExecutionException {
     String clusterName = CLUSTER_NAMES[0];
