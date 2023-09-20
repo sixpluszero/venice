@@ -124,7 +124,7 @@ public class HelixSchemaAccessor {
 
   public void addValueSchema(String storeName, SchemaEntry schemaEntry) {
     HelixUtils.create(schemaAccessor, getValueSchemaPath(storeName, String.valueOf(schemaEntry.getId())), schemaEntry);
-    logger.info("Added value schema: {} for store: {}.", schemaEntry, storeName);
+    // logger.info("Added value schema: {} for store: {}.", schemaEntry, storeName);
   }
 
   public void addDerivedSchema(String storeName, DerivedSchemaEntry derivedSchemaEntry) {
@@ -135,7 +135,7 @@ public class HelixSchemaAccessor {
             String.valueOf(derivedSchemaEntry.getValueSchemaID()),
             String.valueOf(derivedSchemaEntry.getId())),
         derivedSchemaEntry);
-    logger.info("Added derived schema: {} for store: {}.", derivedSchemaEntry, storeName);
+    // logger.info("Added derived schema: {} for store: {}.", derivedSchemaEntry, storeName);
   }
 
   public void removeDerivedSchema(String storeName, String derivedSchemaIdPair) {
