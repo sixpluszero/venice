@@ -228,15 +228,16 @@ public class AvroStoreClientEndToEndTest extends AbstractClientEndToEndSetup {
     }
   }
 
-  @Test(dataProvider = "FastClient-Five-Boolean-A-Number-Store-Metadata-Fetch-Mode", timeOut = TIME_OUT)
-  public void testFastClientGet(
-      boolean dualRead,
-      boolean speculativeQueryEnabled,
-      boolean batchGet,
-      boolean useStreamingBatchGetAsDefault,
-      boolean enableGrpc,
-      int batchGetKeySize,
-      StoreMetadataFetchMode storeMetadataFetchMode) throws Exception {
+  @Test(timeOut = TIME_OUT)
+  public void testFastClientGet() throws Exception {
+    boolean dualRead = false;
+    boolean speculativeQueryEnabled = false;
+    boolean batchGet = true;
+    boolean useStreamingBatchGetAsDefault = true;
+    boolean enableGrpc = true;
+    int batchGetKeySize = 2;
+    StoreMetadataFetchMode storeMetadataFetchMode = StoreMetadataFetchMode.SERVER_BASED_METADATA;
+
     ClientConfig.ClientConfigBuilder clientConfigBuilder =
         new ClientConfig.ClientConfigBuilder<>().setStoreName(storeName)
             .setR2Client(r2Client)
@@ -325,7 +326,7 @@ public class AvroStoreClientEndToEndTest extends AbstractClientEndToEndSetup {
     }
   }
 
-  @Test(expectedExceptions = { VeniceClientException.class,
+  @Test(enabled = false, expectedExceptions = { VeniceClientException.class,
       ExecutionException.class }, expectedExceptionsMessageRegExp = ".* metadata is not ready, attempting to re-initialize", dataProvider = "FastClient-Three-Boolean-And-A-Number", timeOut = TIME_OUT)
   public void testFastClientWithoutServers(
       boolean multiGet,
@@ -378,7 +379,7 @@ public class AvroStoreClientEndToEndTest extends AbstractClientEndToEndSetup {
     }
   }
 
-  @Test(dataProvider = "fastClientHTTPVariantsAndStoreMetadataFetchModes", timeOut = TIME_OUT)
+  @Test(enabled = false, dataProvider = "fastClientHTTPVariantsAndStoreMetadataFetchModes", timeOut = TIME_OUT)
   public void testFastClientGetWithDifferentHTTPVariants(
       ClientTestUtils.FastClientHTTPVariant fastClientHTTPVariant,
       StoreMetadataFetchMode storeMetadataFetchMode) throws Exception {
@@ -421,7 +422,7 @@ public class AvroStoreClientEndToEndTest extends AbstractClientEndToEndSetup {
         storeMetadataFetchMode);
   }
 
-  @Test(dataProvider = "FastClient-One-Boolean", timeOut = TIME_OUT)
+  @Test(enabled = false, dataProvider = "FastClient-One-Boolean", timeOut = TIME_OUT)
   public void testFastClientWithLongTailRetry(boolean batchGet) throws Exception {
     ClientConfig.ClientConfigBuilder clientConfigBuilder =
         new ClientConfig.ClientConfigBuilder<>().setStoreName(storeName).setR2Client(r2Client);

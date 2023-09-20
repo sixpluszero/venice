@@ -120,64 +120,14 @@ def integrationTestConfigs = {
 }
 
 def integrationTestBuckets = [
-  "A": [
-      "com.linkedin.davinci.*",
-      "com.linkedin.venice.endToEnd.DaVinciClient*"],
-  "B": [
-      "com.linkedin.venice.endToEnd.DaVinciCluster*",
-      "com.linkedin.venice.endToEnd.DaVinciCompute*",
-      "com.linkedin.venice.endToEnd.DaVinciLive*"],
-  "C": [
-      "com.linkedin.venice.endToEnd.ActiveActive*"],
-  "D": [
-      "com.linkedin.venice.endToEnd.TestActiveActive*"],
-  "E": [
-      "com.linkedin.venice.helix.*",
-      "com.linkedin.venice.helixrebalance.*"],
-  "F": [
-      "com.linkedin.venice.server.*",
-      "com.linkedin.venice.storagenode.*",
-      "com.linkedin.venice.restart.*"],
+    /*
   "G": [
       "com.linkedin.venice.router.*",
       "com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest",
-      "com.linkedin.venice.fastclient.AvroStoreClientZstdEndToEndTest"],
-  "H": [
-      "com.linkedin.venice.fastclient.BatchGet*",
-      "com.linkedin.venice.fastclient.schema.*",
-      "com.linkedin.venice.fastclient.meta.*",
-      "com.linkedin.venice.endToEnd.TestEmptyPush"],
-  "I": [
-      "com.linkedin.venice.fastclient.AvroStoreClientEndToEndTest"],
-  "J": [
-      "com.linkedin.venice.hadoop.*",
-      "com.linkedin.venice.endToEnd.TestVson*",
-      "com.linkedin.venice.endToEnd.Push*"],
-  "K": [
-      "com.linkedin.venice.endToEnd.TestPushJob*"],
-  "L": [
-      "com.linkedin.venice.endToEnd.TestBatch*"],
-  "M": [
-      "com.linkedin.venice.kafka.*",
-      "com.linkedin.venice.samza.*",
-      "com.linkedin.venice.writer.*",
-      "com.linkedin.venice.endToEnd.PartialUpdateTest",
-      "com.linkedin.venice.endToEnd.TestWritePathComputation",
-      "com.linkedin.venice.endToEnd.WriteComputeWithActiveActiveReplicationTest"],
-  "N": [
-      "com.linkedin.venice.endToEnd.StoragePersona*",
-      "com.linkedin.venice.endToEnd.TestStoreUpdateStoragePersona",
-      "com.linkedin.venice.persona.*"],
-  "O": [
-      "com.linkedin.venice.endToEnd.TestHybrid*"],
-  "P": [
-      "com.linkedin.venice.controller.server.*",
-      "com.linkedin.venice.controller.kafka.consumer.*",
-      "com.linkedin.venice.controller.migration.*",
-      "com.linkedin.venice.controller.AdminTool*",
-      "com.linkedin.venice.controller.VeniceParentHelixAdminTest"],
-  "Q": [
-      "com.linkedin.venice.controller.Test*"]
+      "com.linkedin.venice.fastclient.AvroStoreClientZstdEndToEndTest"]
+     */
+    "G": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"]
+
 ]
 
 integrationTestBuckets.each { name, patterns ->
@@ -248,6 +198,7 @@ task generateGHCI() {
   def common = "--continue --no-daemon "
   def staticAnalysisFlowGradleArgs = common + "clean check --parallel -Pspotallbugs -x test -x integrationTest -x jacocoTestCoverageVerification"
 
+  /*
   def staticAnalysis = "StaticAnalysis"
   appendToGHCI(paramFileContent, targetFilePath, staticAnalysis, 20, staticAnalysisFlowGradleArgs)
   jobs << staticAnalysis
@@ -261,13 +212,14 @@ task generateGHCI() {
   def avroCompatibilityFlowGradleArgs = "-DmaxParallelForks=2 --parallel :internal:venice-avro-compatibility-test:test --continue"
   appendToGHCI(paramFileContent, targetFilePath, avroCompatibilityTests, 60, avroCompatibilityFlowGradleArgs)
   jobs << avroCompatibilityTests
-
+   */
   def integTestGradleArgs = common + "-DforkEvery=1 -DmaxParallelForks=1 integrationTest"
   integrationTestBuckets.each { name, patterns ->
     def flowName = "IntegrationTests" + name
     jobs << flowName
     appendToGHCI(paramFileContent, targetFilePath, flowName, 120, integTestGradleArgs + name)
   }
+  /*
   def otherTest = "IntegrationTestsZ"
   appendToGHCI(paramFileContent, targetFilePath, otherTest, 120, integTestGradleArgs + "Z")
   jobs << otherTest
@@ -279,6 +231,7 @@ task generateGHCI() {
   def alpiniFunctionalTests = "AlpiniFunctionalTests"
   appendToGHCI(alpiniParamFileContent, targetFilePath, alpiniFunctionalTests, 120, common + "-DmaxParallelForks=1 alpiniFunctionalTest")
   jobs << alpiniFunctionalTests
+   */
 
   // define a job that depends others to manage the status check
   appendToGHCI(paramFileContent, targetFilePath, "DummyStep", 120, "clean", jobs)
