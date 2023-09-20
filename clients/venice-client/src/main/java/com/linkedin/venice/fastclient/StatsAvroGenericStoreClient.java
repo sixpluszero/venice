@@ -11,6 +11,7 @@ import com.linkedin.venice.fastclient.stats.FastClientStats;
 import com.linkedin.venice.read.RequestType;
 import com.linkedin.venice.utils.LatencyUtils;
 import com.linkedin.venice.utils.Time;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -166,6 +167,10 @@ public class StatsAvroGenericStoreClient<K, V> extends DelegatingAvroStoreClient
       }
 
       if (exceptionReceived || (latency > TIMEOUT_IN_SECOND * Time.MS_PER_SECOND)) {
+        LOGGER.info("DEBUGGING FOUND EXCEPTION: {} {}", latency, TIMEOUT_IN_SECOND);
+        if (exceptionReceived) {
+          LOGGER.info("DEBUGGING EXCEPTION: {}", Arrays.toString(throwable.getStackTrace()));
+        }
         clientStats.recordUnhealthyRequest();
         clientStats.recordUnhealthyLatency(latency);
       } else {
