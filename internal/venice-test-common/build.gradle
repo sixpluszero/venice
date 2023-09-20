@@ -117,6 +117,7 @@ def integrationTestConfigs = {
   testClassesDirs = sourceSets.integrationTest.output.classesDirs
   forkEvery = Integer.parseInt(project.properties.get('integrationTest.forkEvery', "$forkEvery"))
   maxParallelForks = Integer.parseInt(project.properties.get('integrationTest.maxParallelForks', "$maxParallelForks"))
+  testLogging.showStandardStreams = true
 }
 
 def integrationTestBuckets = [
