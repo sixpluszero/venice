@@ -228,7 +228,7 @@ public class AvroStoreClientEndToEndTest extends AbstractClientEndToEndSetup {
     }
   }
 
-  @Test(timeOut = TIME_OUT, invocationCount = 5)
+  @Test(timeOut = TIME_OUT, invocationCount = 1)
   public void testFastClientGet() throws Exception {
     boolean dualRead = false;
     boolean speculativeQueryEnabled = false;

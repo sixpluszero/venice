@@ -127,8 +127,14 @@ def integrationTestBuckets = [
       "com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest",
       "com.linkedin.venice.fastclient.AvroStoreClientZstdEndToEndTest"]
      */
-    "G": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"]
-
+    "A": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"],
+    "B": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"],
+    "C": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"],
+    "D": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"],
+    "E": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"],
+    "F": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"],
+    "G": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"],
+    "H": ["com.linkedin.venice.fastclient.AvroStoreClientGzipEndToEndTest"],
 ]
 
 integrationTestBuckets.each { name, patterns ->

@@ -529,6 +529,9 @@ public abstract class AbstractClientEndToEndSetup {
 
     // counters are incremented in an async manner, so adding non-deterministic wait
     TestUtils.waitForNonDeterministicAssertion(5, TimeUnit.SECONDS, () -> {
+      LOGGER.info(
+          "DEBUGGING UNHEALTHY_REQUEST_OCCRRENCERATE: {}",
+          metrics.get(metricPrefix + "unhealthy_request.OccurrenceRate").value());
       assertTrue(metrics.get(metricPrefix + "request.OccurrenceRate").value() > 0);
       assertTrue(metrics.get(metricPrefix + "healthy_request.OccurrenceRate").value() > 0);
       assertTrue(metrics.get(metricPrefix + "healthy_request_latency.Avg").value() > 0);
