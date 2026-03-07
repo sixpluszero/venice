@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Queue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import org.apache.helix.manager.zk.ZKHelixAdmin;
@@ -122,6 +123,8 @@ public class StoreIngestionTaskFactory {
     private ExecutorService aaWCWorkLoadProcessingThreadPool;
     private ExecutorService aaWCIngestionStorageLookupThreadPool;
     private Supplier<IngestionTaskReusableObjects> reusableObjectsSupplier;
+    private AtomicReference<BlobTransferBootstrapController> blobTransferBootstrapControllerReference =
+        new AtomicReference<>();
 
     private interface Setter {
       void apply();
@@ -323,6 +326,15 @@ public class StoreIngestionTaskFactory {
 
     public Supplier<IngestionTaskReusableObjects> getReusableObjectsSupplier() {
       return this.reusableObjectsSupplier;
+    }
+
+    public AtomicReference<BlobTransferBootstrapController> getBlobTransferBootstrapControllerReference() {
+      return blobTransferBootstrapControllerReference;
+    }
+
+    public Builder setBlobTransferBootstrapControllerReference(
+        AtomicReference<BlobTransferBootstrapController> blobTransferBootstrapControllerReference) {
+      return set(() -> this.blobTransferBootstrapControllerReference = blobTransferBootstrapControllerReference);
     }
   }
 }

@@ -322,6 +322,7 @@ public abstract class StoreIngestionTask implements Runnable, Closeable {
   protected final Consumer<DataValidationException> divErrorMetricCallback;
   private final ExecutorService missingSOPCheckExecutor = Executors.newSingleThreadExecutor();
   private final VeniceStoreVersionConfig storeVersionConfig;
+  private final AtomicReference<BlobTransferBootstrapController> blobTransferBootstrapControllerReference;
   protected final long readCycleDelayMs;
   protected final long emptyPollSleepMs;
 
@@ -471,6 +472,7 @@ public abstract class StoreIngestionTask implements Runnable, Closeable {
       Lazy<ZKHelixAdmin> zkHelixAdmin) {
     this.version = version;
     this.storeVersionConfig = storeVersionConfig;
+    this.blobTransferBootstrapControllerReference = builder.getBlobTransferBootstrapControllerReference();
     this.readCycleDelayMs = storeVersionConfig.getKafkaReadCycleDelayMs();
     this.emptyPollSleepMs = storeVersionConfig.getKafkaEmptyPollSleepMs();
     this.databaseSyncBytesIntervalForTransactionalMode =
@@ -961,6 +963,10 @@ public abstract class StoreIngestionTask implements Runnable, Closeable {
 
   public boolean hasAnyPendingSubscription() {
     return pendingSubscriptionActionCount.get() > 0;
+  }
+
+  protected boolean hasDeferredPartitionBootstrap() {
+    return partitionConsumptionStateMap.values().stream().anyMatch(PartitionConsumptionState::isDeferredSubscription);
   }
 
   /**
@@ -1772,7 +1778,7 @@ public abstract class StoreIngestionTask implements Runnable, Closeable {
      * Check whether current consumer has any subscription or not since 'poll' function will throw
      * {@link IllegalStateException} with empty subscription.
      */
-    if (!(consumerHasAnySubscription() || hasAnyPendingSubscription())) {
+    if (!(consumerHasAnySubscription() || hasAnyPendingSubscription() || hasDeferredPartitionBootstrap())) {
       if (idleCounter.incrementAndGet() > getMaxIdleCounter()) {
         if (!hybridStoreConfig.isPresent() && serverConfig.isUnsubscribeAfterBatchpushEnabled() && subscribedCount != 0
             && subscribedCount == forceUnSubscribedCount) {
@@ -2452,27 +2458,18 @@ public abstract class StoreIngestionTask implements Runnable, Closeable {
         failedPartitions.remove(partition);
         // Drain the buffered message by last subscription.
         storeBufferService.drainBufferedRecordsFromTopicPartition(topicPartition);
-        subscribedCount++;
 
-        // Get the last persisted Offset record from metadata service
-        OffsetRecord offsetRecord = storageMetadataService.getLastOffset(topic, partition, pubSubContext);
-
-        // Let's try to restore the state retrieved from the OffsetManager
-        PartitionConsumptionState newPartitionConsumptionState = new PartitionConsumptionState(
-            topicPartition,
-            offsetRecord,
-            pubSubContext,
-            hybridStoreConfig.isPresent(),
-            schemaRepository.getKeySchema(storeName).getSchema());
-        newPartitionConsumptionState.setCurrentVersionSupplier(isCurrentVersion);
-
-        boolean isFutureVersionReady = isFutureVersionReady(kafkaVersionTopic, storeRepository);
-        if (isCurrentVersion.getAsBoolean() || isFutureVersionReady) {
-          // Latch creation is in StateModelIngestionProgressNotifier#startConsumption() from the Helix transition
-          newPartitionConsumptionState.setLatchCreated();
+        PartitionConsumptionState newPartitionConsumptionState =
+            preparePartitionConsumptionState(topicPartition, topic, partition);
+        if (maybeStartBlobTransferBootstrap(consumerAction, newPartitionConsumptionState)) {
+          LOGGER.info(
+              "Deferred Kafka subscription for replica {} while blob transfer bootstrap is in progress.",
+              newPartitionConsumptionState.getReplicaId());
+          break;
         }
 
-        partitionConsumptionStateMap.put(partition, newPartitionConsumptionState);
+        subscribedCount++;
+        OffsetRecord offsetRecord = newPartitionConsumptionState.getOffsetRecord();
 
         // Load the VT segments from the offset record into the appropriate data integrity validator
         getDataIntegrityValidator().setPartitionState(PartitionTracker.VERSION_TOPIC, partition, offsetRecord);
@@ -2547,7 +2544,6 @@ public abstract class StoreIngestionTask implements Runnable, Closeable {
         } else { // no point in logging progress if it's symbolic (earliest or latest position)
           LOGGER.info("Subscribed to: {} position: {}", topicPartition, subscribePosition);
         }
-        storageUtilizationManager.initPartition(partition);
         break;
       case UNSUBSCRIBE:
         LOGGER.info("{} Unsubscribing to: {}", ingestionTaskName, topicPartition);
@@ -2628,6 +2624,59 @@ public abstract class StoreIngestionTask implements Runnable, Closeable {
       default:
         throw new UnsupportedOperationException(operation.name() + " is not supported in " + getClass().getName());
     }
+  }
+
+  private boolean maybeStartBlobTransferBootstrap(
+      ConsumerAction consumerAction,
+      PartitionConsumptionState partitionConsumptionState) {
+    BlobTransferBootstrapController blobTransferBootstrapController = blobTransferBootstrapControllerReference.get();
+    if (blobTransferBootstrapController == null) {
+      return false;
+    }
+
+    boolean shouldDeferSubscription = blobTransferBootstrapController.maybeStartBlobTransferBootstrap(
+        storeVersionConfig,
+        consumerAction,
+        partitionConsumptionState,
+        () -> subscribePartition(
+            consumerAction.getTopicPartition(),
+            consumerAction.isHelixTriggeredAction(),
+            Optional.ofNullable(consumerAction.getPubSubPosition())));
+    if (shouldDeferSubscription) {
+      partitionConsumptionState.deferSubscription();
+    }
+    return shouldDeferSubscription;
+  }
+
+  private PartitionConsumptionState preparePartitionConsumptionState(
+      PubSubTopicPartition topicPartition,
+      String topic,
+      int partition) {
+    OffsetRecord offsetRecord = storageMetadataService.getLastOffset(topic, partition, pubSubContext);
+    PartitionConsumptionState partitionConsumptionState = partitionConsumptionStateMap.get(partition);
+    boolean isFutureVersionReady = isFutureVersionReady(kafkaVersionTopic, storeRepository);
+
+    if (partitionConsumptionState == null) {
+      partitionConsumptionState = new PartitionConsumptionState(
+          topicPartition,
+          offsetRecord,
+          pubSubContext,
+          hybridStoreConfig.isPresent(),
+          schemaRepository.getKeySchema(storeName).getSchema());
+      partitionConsumptionState.setCurrentVersionSupplier(isCurrentVersion);
+
+      if (isCurrentVersion.getAsBoolean() || isFutureVersionReady) {
+        // Latch creation is in StateModelIngestionProgressNotifier#startConsumption() from the Helix transition
+        partitionConsumptionState.setLatchCreated();
+      }
+      partitionConsumptionStateMap.put(partition, partitionConsumptionState);
+      storageUtilizationManager.initPartition(partition);
+    } else {
+      partitionConsumptionState.getOffsetRecord().copyFrom(offsetRecord);
+      partitionConsumptionState.subscribe();
+    }
+
+    return partitionConsumptionState;
   }
 
   private void resetOffset(int partition, PubSubTopicPartition topicPartition, boolean restartIngestion) {
@@ -4703,6 +4752,11 @@ public abstract class StoreIngestionTask implements Runnable, Closeable {
 
   AtomicBoolean getIsRunning() {
     return isRunning;
+  }
+
+  @VisibleForTesting
+  void setBlobTransferBootstrapController(BlobTransferBootstrapController blobTransferBootstrapController) {
+    blobTransferBootstrapControllerReference.set(blobTransferBootstrapController);
   }
 
   /**

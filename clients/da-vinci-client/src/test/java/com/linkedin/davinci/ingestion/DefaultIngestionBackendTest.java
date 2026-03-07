@@ -21,7 +21,9 @@ import com.linkedin.davinci.blobtransfer.BlobTransferUtils.BlobTransferStatus;
 import com.linkedin.davinci.blobtransfer.client.NettyFileTransferClient;
 import com.linkedin.davinci.config.VeniceServerConfig;
 import com.linkedin.davinci.config.VeniceStoreVersionConfig;
+import com.linkedin.davinci.kafka.consumer.ConsumerAction;
 import com.linkedin.davinci.kafka.consumer.KafkaStoreIngestionService;
+import com.linkedin.davinci.kafka.consumer.PartitionConsumptionState;
 import com.linkedin.davinci.stats.AggVersionedBlobTransferStats;
 import com.linkedin.davinci.storage.StorageMetadataService;
 import com.linkedin.davinci.storage.StorageService;
@@ -151,7 +153,7 @@ public class DefaultIngestionBackendTest {
     when(rocksDBServerConfig.isRocksDBPlainTableFormatEnabled()).thenReturn(false);
     when(veniceServerConfig.getRocksDBServerConfig()).thenReturn(rocksDBServerConfig);
 
-    ingestionBackend.startConsumption(storeConfig, PARTITION, Optional.empty(), REPLICA_ID);
+    maybeStartBlobTransferBootstrap(ingestionBackend, mock(Runnable.class));
     verifyBlobTransfer(true);
     verify(aggVersionedBlobTransferStats).recordBlobTransferResponsesCount(eq(STORE_NAME), eq(VERSION_NUMBER));
     verify(aggVersionedBlobTransferStats)
@@ -222,7 +224,7 @@ public class DefaultIngestionBackendTest {
     when(store.getBlobTransferInServerEnabled()).thenReturn(storeSetting);
     when(veniceServerConfig.getBlobTransferReceiverServerPolicy()).thenReturn(serverSetting);
 
-    ingestionBackend.startConsumption(storeConfig, PARTITION, Optional.empty(), REPLICA_ID);
+    maybeStartBlobTransferBootstrap(ingestionBackend, mock(Runnable.class));
     verifyBlobTransfer(expectEnabled);
 
     // Reset replica state for next iteration
@@ -236,6 +238,23 @@ public class DefaultIngestionBackendTest {
       verify(blobTransferManager, never())
           .get(eq(STORE_NAME), eq(VERSION_NUMBER), eq(PARTITION), eq(BLOB_TRANSFER_FORMAT));
     }
+  }
+
+  private boolean maybeStartBlobTransferBootstrap(DefaultIngestionBackend backend, Runnable resumeSubscription) {
+    ConsumerAction consumerAction = createBlobTransferConsumerAction();
+    PartitionConsumptionState partitionConsumptionState = mock(PartitionConsumptionState.class);
+    return backend
+        .maybeStartBlobTransferBootstrap(storeConfig, consumerAction, partitionConsumptionState, resumeSubscription);
+  }
+
+  private ConsumerAction createBlobTransferConsumerAction() {
+    ConsumerAction consumerAction = mock(ConsumerAction.class);
+    when(consumerAction.getPubSubPosition()).thenReturn(null);
+    com.linkedin.venice.pubsub.api.PubSubTopicPartition topicPartition =
+        mock(com.linkedin.venice.pubsub.api.PubSubTopicPartition.class);
+    when(topicPartition.getPartitionNumber()).thenReturn(PARTITION);
+    when(consumerAction.getTopicPartition()).thenReturn(topicPartition);
+    return consumerAction;
   }
 
   @Test
@@ -253,7 +272,7 @@ public class DefaultIngestionBackendTest {
     when(rocksDBServerConfig.isRocksDBPlainTableFormatEnabled()).thenReturn(false);
     when(veniceServerConfig.getRocksDBServerConfig()).thenReturn(rocksDBServerConfig);
 
-    ingestionBackend.startConsumption(storeConfig, PARTITION, Optional.empty(), REPLICA_ID);
+    maybeStartBlobTransferBootstrap(ingestionBackend, mock(Runnable.class));
     verify(blobTransferManager).get(eq(STORE_NAME), eq(VERSION_NUMBER), eq(PARTITION), eq(BLOB_TRANSFER_FORMAT));
     verify(aggVersionedBlobTransferStats).recordBlobTransferResponsesCount(eq(STORE_NAME), eq(VERSION_NUMBER));
     verify(aggVersionedBlobTransferStats)
@@ -276,7 +295,7 @@ public class DefaultIngestionBackendTest {
     doNothing().when(storageEngine)
         .adjustStoragePartition(eq(PARTITION), eq(StoragePartitionAdjustmentTrigger.END_BLOB_TRANSFER), any());
 
-    ingestionBackend.startConsumption(storeConfig, PARTITION, Optional.empty(), REPLICA_ID);
+    maybeStartBlobTransferBootstrap(ingestionBackend, mock(Runnable.class));
 
     verify(blobTransferManager).get(eq(STORE_NAME), eq(VERSION_NUMBER), eq(PARTITION), eq(BLOB_TRANSFER_FORMAT));
     verify(aggVersionedBlobTransferStats).recordBlobTransferResponsesCount(eq(STORE_NAME), eq(VERSION_NUMBER));
@@ -322,6 +341,51 @@ public class DefaultIngestionBackendTest {
     verify(aggVersionedBlobTransferStats, never()).recordBlobTransferResponsesCount(eq(STORE_NAME), eq(VERSION_NUMBER));
     verify(aggVersionedBlobTransferStats, never())
         .recordBlobTransferResponsesBasedOnBoostrapStatus(eq(STORE_NAME), eq(VERSION_NUMBER), eq(false));
+  }
+
+  @Test
+  public void testBlobTransferUsesStartConsumptionAsSingleSitEntryPoint() {
+    when(store.isBlobTransferEnabled()).thenReturn(true);
+    when(storeIngestionService.isDaVinciClient()).thenReturn(true);
+    when(store.isHybrid()).thenReturn(true);
+
+    ingestionBackend.startConsumption(storeConfig, PARTITION, Optional.empty(), REPLICA_ID);
+
+    verify(storeIngestionService).startConsumption(storeConfig, PARTITION, Optional.empty());
+    verify(blobTransferManager, never())
+        .get(eq(STORE_NAME), eq(VERSION_NUMBER), eq(PARTITION), eq(BLOB_TRANSFER_FORMAT));
+  }
+
+  @Test
+  public void testMaybeStartBlobTransferBootstrapResumesSubscribe() {
+    when(store.isBlobTransferEnabled()).thenReturn(true);
+    when(storeIngestionService.isDaVinciClient()).thenReturn(true);
+    when(store.isHybrid()).thenReturn(true);
+    when(veniceServerConfig.getRocksDBPath()).thenReturn(BASE_DIR);
+
+    RocksDBServerConfig rocksDBServerConfig = Mockito.mock(RocksDBServerConfig.class);
+    when(rocksDBServerConfig.isRocksDBPlainTableFormatEnabled()).thenReturn(false);
+    when(veniceServerConfig.getRocksDBServerConfig()).thenReturn(rocksDBServerConfig);
+    when(blobTransferManager.get(eq(STORE_NAME), eq(VERSION_NUMBER), eq(PARTITION), eq(BLOB_TRANSFER_FORMAT)))
+        .thenReturn(CompletableFuture.completedFuture(null));
+
+    ConsumerAction consumerAction = mock(ConsumerAction.class);
+    when(consumerAction.getPubSubPosition()).thenReturn(null);
+    com.linkedin.venice.pubsub.api.PubSubTopicPartition topicPartition =
+        mock(com.linkedin.venice.pubsub.api.PubSubTopicPartition.class);
+    when(topicPartition.getPartitionNumber()).thenReturn(PARTITION);
+    when(consumerAction.getTopicPartition()).thenReturn(topicPartition);
+    PartitionConsumptionState partitionConsumptionState = mock(PartitionConsumptionState.class);
+    Runnable resumeSubscription = mock(Runnable.class);
+
+    assertTrue(
+        ingestionBackend.maybeStartBlobTransferBootstrap(
+            storeConfig,
+            consumerAction,
+            partitionConsumptionState,
+            resumeSubscription));
+    verify(blobTransferManager).get(eq(STORE_NAME), eq(VERSION_NUMBER), eq(PARTITION), eq(BLOB_TRANSFER_FORMAT));
+    verify(resumeSubscription).run();
   }
 
   @Test
@@ -417,7 +481,7 @@ public class DefaultIngestionBackendTest {
     when(veniceServerConfig.getRocksDBServerConfig()).thenReturn(rocksDBServerConfig);
     when(storageService.getStorageEngine(kafkaTopic)).thenReturn(storageEngine);
 
-    ingestionBackend.startConsumption(storeConfig, PARTITION, Optional.empty(), REPLICA_ID);
+    maybeStartBlobTransferBootstrap(ingestionBackend, mock(Runnable.class));
     verify(blobTransferManager).get(eq(STORE_NAME), eq(VERSION_NUMBER), eq(PARTITION), eq(BLOB_TRANSFER_FORMAT));
     verify(aggVersionedBlobTransferStats).recordBlobTransferResponsesCount(eq(STORE_NAME), eq(VERSION_NUMBER));
     verify(aggVersionedBlobTransferStats)
@@ -763,6 +827,11 @@ public class DefaultIngestionBackendTest {
     Thread startThread = new Thread(() -> {
       try {
         testIngestionBackend.startConsumption(storeConfig, PARTITION, Optional.empty(), REPLICA_ID);
+        testIngestionBackend.maybeStartBlobTransferBootstrap(
+            storeConfig,
+            createBlobTransferConsumerAction(),
+            mock(PartitionConsumptionState.class),
+            mock(Runnable.class));
       } catch (Exception e) {
         LogManager.getLogger().error("Start error: {}", e.getMessage(), e);
       }

@@ -628,8 +628,8 @@ public class LeaderFollowerStoreIngestionTask extends StoreIngestionTask {
        * For current / backup version re-ingestion, it should report failure to the replica, but should keep other
        * online replica continue serving and do not close ingestion task.
        */
-      if (!partitionConsumptionState.isComplete() && !partitionConsumptionState.isErrorReported()
-          && LatencyUtils.getElapsedTimeFromMsToMs(
+      if (!partitionConsumptionState.isDeferredSubscription() && !partitionConsumptionState.isComplete()
+          && !partitionConsumptionState.isErrorReported() && LatencyUtils.getElapsedTimeFromMsToMs(
               partitionConsumptionState.getConsumptionStartTimeInMs()) > getBootstrapTimeoutInMs()) {
         if (!pushTimeout) {
           pushTimeout = true;
@@ -649,6 +649,9 @@ public class LeaderFollowerStoreIngestionTask extends StoreIngestionTask {
           break;
 
         case IN_TRANSITION_FROM_STANDBY_TO_LEADER:
+          if (partitionConsumptionState.isDeferredSubscription()) {
+            break;
+          }
           if (canSwitchToLeaderTopic(partitionConsumptionState)) {
             LOGGER.info(
                 "Initiating promotion of replica: {} to leader for the partition. Unsubscribing from the current topic: {}",

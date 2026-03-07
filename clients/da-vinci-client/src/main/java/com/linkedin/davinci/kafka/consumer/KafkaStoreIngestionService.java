@@ -124,6 +124,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
@@ -227,6 +228,8 @@ public class KafkaStoreIngestionService extends AbstractVeniceService implements
   private final MetricsRepository metricsRepository;
 
   private final HeartbeatMonitoringService heartbeatMonitoringService;
+  private final AtomicReference<BlobTransferBootstrapController> blobTransferBootstrapControllerReference =
+      new AtomicReference<>();
 
   public KafkaStoreIngestionService(
       StorageService storageService,
@@ -548,6 +551,7 @@ public class KafkaStoreIngestionService extends AbstractVeniceService implements
         .setHeartbeatMonitoringService(heartbeatMonitoringService)
         .setAAWCWorkLoadProcessingThreadPool(aaWCWorkLoadProcessingThreadPool)
         .setAAWCIngestionStorageLookupThreadPool(aaWCIngestionStorageLookupThreadPool)
+        .setBlobTransferBootstrapControllerReference(blobTransferBootstrapControllerReference)
         .setReusableObjectsSupplier(reusableObjectsSupplier)
         .build();
   }
@@ -1537,6 +1541,10 @@ public class KafkaStoreIngestionService extends AbstractVeniceService implements
   @Override
   public boolean isBlobTransferDisabledForStore(String storeName) {
     return blobTransferDisabledStores.contains(storeName);
+  }
+
+  public void setBlobTransferBootstrapController(BlobTransferBootstrapController blobTransferBootstrapController) {
+    blobTransferBootstrapControllerReference.set(blobTransferBootstrapController);
   }
 
   public void attemptToPrintIngestionInfoFor(String storeName, Integer version, Integer partition, String regionName) {

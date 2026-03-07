@@ -97,6 +97,7 @@ public class PartitionConsumptionState {
   private long lagCaughtUpTimeInMs;
   private volatile boolean completionReported;
   private boolean isSubscribed;
+  private boolean deferredSubscription;
   private boolean isDataRecoveryCompleted;
   private LeaderFollowerStateType leaderFollowerState;
 
@@ -332,6 +333,7 @@ public class PartitionConsumptionState {
     this.lagCaughtUpTimeInMs = 0;
     this.completionReported = false;
     this.isSubscribed = true;
+    this.deferredSubscription = false;
     this.processedRecordSizeSinceLastSync = 0;
     this.leaderFollowerState = LeaderFollowerStateType.STANDBY;
     this.expectedSSTFileChecksum = null;
@@ -456,8 +458,22 @@ public class PartitionConsumptionState {
     return isSubscribed;
   }
 
+  public void subscribe() {
+    this.isSubscribed = true;
+    this.deferredSubscription = false;
+  }
+
   public void unsubscribe() {
     this.isSubscribed = false;
+  }
+
+  public boolean isDeferredSubscription() {
+    return deferredSubscription;
+  }
+
+  public void deferSubscription() {
+    this.isSubscribed = false;
+    this.deferredSubscription = true;
   }
 
   public boolean isLatchCreated() {

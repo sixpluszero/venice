@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -850,6 +852,7 @@ public class LeaderFollowerStoreIngestionTaskTest {
   @Test
   public void testFutureVersionLatchStatus() throws InterruptedException {
     setUp(true);
+    leaderFollowerStoreIngestionTask.getPartitionConsumptionStateMap().clear();
 
     // Setup subscribe action
     PubSubTopicPartition partition0 = new PubSubTopicPartitionImpl(TOPIC_REPOSITORY.getTopic("test-topic_v1"), 0);
@@ -869,7 +872,6 @@ public class LeaderFollowerStoreIngestionTaskTest {
 
     when(mockStorageMetadataService.getLastOffset(any(), anyInt(), any())).thenReturn(mockOffsetRecord);
     when(mockConsumerAction.getTopicPartition()).thenReturn(partition0);
-    when(mockPartitionConsumptionState.getOffsetRecord()).thenReturn(mockOffsetRecord);
 
     // Setup store. Mark current version as false and make future version ONLINE to trigger Utils.isFutureVersionReady
     when(mockBooleanSupplier.getAsBoolean()).thenReturn(false);
@@ -897,6 +899,65 @@ public class LeaderFollowerStoreIngestionTaskTest {
 
     // Verify that we enter the block to release the latch
     verify(leaderFollowerStoreIngestionTask, times(1)).measureLagWithCallToPubSub(any(), any(), any());
+    PartitionConsumptionState partitionConsumptionState =
+        leaderFollowerStoreIngestionTask.getPartitionConsumptionState(0);
+    assertTrue(partitionConsumptionState.isLatchCreated());
+  }
+
+  @Test
+  public void testBlobTransferDeferredSubscribeCreatesReusablePartitionConsumptionState() throws InterruptedException {
+    setUp(true);
+    leaderFollowerStoreIngestionTask.getPartitionConsumptionStateMap().clear();
+    BlobTransferBootstrapController blobTransferBootstrapController = mock(BlobTransferBootstrapController.class);
+    leaderFollowerStoreIngestionTask.setBlobTransferBootstrapController(blobTransferBootstrapController);
+
+    PubSubTopicPartition partition0 = new PubSubTopicPartitionImpl(TOPIC_REPOSITORY.getTopic("test-topic_v1"), 0);
+    OffsetRecord attachedOffsetRecord = new OffsetRecord(
+        AvroProtocolDefinition.PARTITION_STATE.getSerializer(),
+        leaderFollowerStoreIngestionTask.pubSubContext);
+    attachedOffsetRecord.setOffsetLag(1L);
+    OffsetRecord subscribedOffsetRecord = new OffsetRecord(
+        AvroProtocolDefinition.PARTITION_STATE.getSerializer(),
+        leaderFollowerStoreIngestionTask.pubSubContext);
+    subscribedOffsetRecord.setOffsetLag(99L);
+
+    when(mockStorageMetadataService.getLastOffset(any(), anyInt(), any())).thenReturn(attachedOffsetRecord)
+        .thenReturn(subscribedOffsetRecord);
+    doNothing().when(leaderFollowerStoreIngestionTask).consumerSubscribe(any(), any(), any(), anyString());
+    when(mockBooleanSupplier.getAsBoolean()).thenReturn(false);
+    when(storeRepository.getStore(anyString())).thenReturn(mockStore);
+    Version mockVersion = mock(Version.class);
+    when(mockVersion.getStatus()).thenReturn(VersionStatus.STARTED);
+    when(mockStore.getVersion(1)).thenReturn(mockVersion);
+    when(mockStore.getCurrentVersion()).thenReturn(0);
+    when(blobTransferBootstrapController.maybeStartBlobTransferBootstrap(any(), any(), any(), any())).thenReturn(true)
+        .thenReturn(false);
+
+    ConsumerAction subscribeAction = new ConsumerAction(ConsumerActionType.SUBSCRIBE, partition0, 1, true);
+    leaderFollowerStoreIngestionTask.processCommonConsumerAction(subscribeAction);
+
+    PartitionConsumptionState attachedPartitionConsumptionState =
+        leaderFollowerStoreIngestionTask.getPartitionConsumptionState(0);
+    assertNotNull(attachedPartitionConsumptionState);
+    assertFalse(attachedPartitionConsumptionState.isSubscribed());
+    assertTrue(attachedPartitionConsumptionState.isDeferredSubscription());
+    attachedPartitionConsumptionState
+        .setLeaderFollowerState(LeaderFollowerStateType.IN_TRANSITION_FROM_STANDBY_TO_LEADER);
+
+    ConsumerAction resumeSubscribeAction = new ConsumerAction(ConsumerActionType.SUBSCRIBE, partition0, 2, true);
+    leaderFollowerStoreIngestionTask.processCommonConsumerAction(resumeSubscribeAction);
+
+    PartitionConsumptionState subscribedPartitionConsumptionState =
+        leaderFollowerStoreIngestionTask.getPartitionConsumptionState(0);
+    assertSame(subscribedPartitionConsumptionState, attachedPartitionConsumptionState);
+    assertTrue(subscribedPartitionConsumptionState.isSubscribed());
+    assertFalse(subscribedPartitionConsumptionState.isDeferredSubscription());
+    assertEquals(
+        subscribedPartitionConsumptionState.getLeaderFollowerState(),
+        LeaderFollowerStateType.IN_TRANSITION_FROM_STANDBY_TO_LEADER);
+    assertEquals(subscribedPartitionConsumptionState.getOffsetRecord().getOffsetLag(), OffsetRecord.DEFAULT_OFFSET_LAG);
+    verify(blobTransferBootstrapController, times(2)).maybeStartBlobTransferBootstrap(any(), any(), any(), any());
+    verify(leaderFollowerStoreIngestionTask, times(1)).consumerSubscribe(any(), any(), any(), anyString());
   }
 
   @DataProvider(name = "isVtFullyConsumedCases")

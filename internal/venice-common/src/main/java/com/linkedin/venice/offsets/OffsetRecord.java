@@ -496,6 +496,44 @@ public class OffsetRecord {
   }
 
   /**
+   * Replaces the in-memory state of this record with another record while preserving this instance identity.
+   * This is useful when higher-level state holders need to keep sharing the same OffsetRecord reference.
+   */
+  public void copyFrom(@Nonnull OffsetRecord source) {
+    Validate.notNull(source);
+    PartitionState sourcePartitionState = deserializePartitionState(source.toBytes());
+
+    partitionState.offset = sourcePartitionState.offset;
+    partitionState.offsetLag = sourcePartitionState.offsetLag;
+    partitionState.producerStates = sourcePartitionState.producerStates;
+    partitionState.endOfPush = sourcePartitionState.endOfPush;
+    partitionState.lastUpdate = sourcePartitionState.lastUpdate;
+    partitionState.databaseInfo = sourcePartitionState.databaseInfo;
+    partitionState.previousStatuses = sourcePartitionState.previousStatuses;
+    partitionState.leaderTopic = sourcePartitionState.leaderTopic;
+    partitionState.leaderGUID = sourcePartitionState.leaderGUID;
+    partitionState.leaderHostId = sourcePartitionState.leaderHostId;
+    partitionState.upstreamOffsetMap = sourcePartitionState.upstreamOffsetMap;
+    partitionState.upstreamVersionTopicOffset = sourcePartitionState.upstreamVersionTopicOffset;
+    partitionState.upstreamVersionTopicPubSubPosition = sourcePartitionState.upstreamVersionTopicPubSubPosition;
+    partitionState.pendingReportIncrementalPushVersions = sourcePartitionState.pendingReportIncrementalPushVersions;
+    partitionState.setRealtimeTopicProducerStates(sourcePartitionState.getRealtimeTopicProducerStates());
+    partitionState.upstreamRealTimeTopicPubSubPositionMap = sourcePartitionState.upstreamRealTimeTopicPubSubPositionMap;
+    partitionState.currentTermStartPubSubPosition = sourcePartitionState.currentTermStartPubSubPosition;
+    partitionState.lastProcessedVersionTopicPubSubPosition =
+        sourcePartitionState.lastProcessedVersionTopicPubSubPosition;
+    partitionState.lastConsumedVersionTopicPubSubPosition = sourcePartitionState.lastConsumedVersionTopicPubSubPosition;
+    partitionState.heartbeatTimestamp = sourcePartitionState.heartbeatTimestamp;
+    partitionState.lastCheckpointTimestamp = sourcePartitionState.lastCheckpointTimestamp;
+    if (sourcePartitionState.getRecordTransformerClassHash() != null) {
+      partitionState.setRecordTransformerClassHash(sourcePartitionState.getRecordTransformerClassHash());
+    }
+    partitionState.keyUrnCompressionDict = sourcePartitionState.keyUrnCompressionDict;
+    partitionState.trackingIncrementalPushStatus = sourcePartitionState.trackingIncrementalPushStatus;
+    leaderPubSubTopic = null;
+  }
+
+  /**
    * Deserializes a {@code PubSubPosition} from the provided byte buffer, falling back to an
    * offset-based position if deserialization fails or the buffer is empty.
    *
