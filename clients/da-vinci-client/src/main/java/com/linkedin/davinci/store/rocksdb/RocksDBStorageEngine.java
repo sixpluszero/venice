@@ -88,7 +88,10 @@ public class RocksDBStorageEngine extends AbstractStorageEngine<RocksDBStoragePa
     this.stats = new RocksDBStorageEngineStats(storeDbPath, this::getRMDSizeInBytes, this::getKeyCountEstimate);
 
     // restoreStoragePartitions will create metadata partition if not exist.
-    restoreStoragePartitions(storeConfig.isRestoreMetadataPartition(), storeConfig.isRestoreDataPartitions());
+    restoreStoragePartitions(
+        storeConfig.isRestoreMetadataPartition(),
+        storeConfig.isRestoreDataPartitions(),
+        storeConfig.isRestoreDropBadPartitionEnabled());
 
     if (storeConfig.isRestoreMetadataPartition()) {
       // Persist RocksDB table format option used in building the storage engine.
@@ -185,6 +188,23 @@ public class RocksDBStorageEngine extends AbstractStorageEngine<RocksDBStoragePa
       }
     }
     return sum;
+  }
+
+  @Override
+  protected void dropPartitionDirectory(int partitionId) {
+    String partitionDbPath = RocksDBUtils.composePartitionDbDir(rocksDbPath, getStoreVersionName(), partitionId);
+    File partitionDbDir = new File(partitionDbPath);
+    if (!partitionDbDir.exists()) {
+      return;
+    }
+    try {
+      FileUtils.deleteDirectory(partitionDbDir);
+      LOGGER.info("Dropped on-disk directory for partition: {} of store: {}", partitionId, getStoreVersionName());
+    } catch (IOException e) {
+      throw new VeniceException(
+          "Failed to delete partition directory: " + partitionDbPath + " for store: " + getStoreVersionName(),
+          e);
+    }
   }
 
   @Override

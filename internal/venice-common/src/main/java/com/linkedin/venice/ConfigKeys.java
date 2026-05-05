@@ -1213,6 +1213,14 @@ public class ConfigKeys {
       "server.database.checksum.verification.enabled";
 
   /**
+   * Whether to drop a data partition that fails to be restored at storage engine startup, rather than aborting the
+   * whole engine bootstrap. When enabled, the on-disk directory of the failed partition is deleted so that the
+   * partition is re-bootstrapped from scratch via Helix/ingestion on the next startup. Default false to preserve
+   * fail-fast behavior. Failures while restoring the metadata partition still propagate regardless of this flag.
+   */
+  public static final String SERVER_RESTORE_DROP_BAD_PARTITION_ENABLED = "server.restore.drop.bad.partition.enabled";
+
+  /**
    * Any server config that start with "server.local.consumer.config.prefix" will be used as a customized consumer config
    * for local consumer.
    */

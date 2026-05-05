@@ -123,6 +123,22 @@ public abstract class AbstractStorageEngine<Partition extends AbstractStoragePar
   protected synchronized void restoreStoragePartitions(
       boolean restoreMetadataPartition,
       boolean restoreDataPartitions) {
+    restoreStoragePartitions(restoreMetadataPartition, restoreDataPartitions, false);
+  }
+
+  /**
+   * Load the existing storage partitions.
+   *
+   * @param dropBadPartitionEnabled when true, a single data partition that fails to be restored is logged and its
+   *                                on-disk directory dropped via {@link #dropPartitionDirectory(int)}, allowing the
+   *                                rest of the engine to come up. When false, the first restore failure aborts the
+   *                                whole restore and the exception propagates. Failures while restoring the metadata
+   *                                partition always propagate.
+   */
+  protected synchronized void restoreStoragePartitions(
+      boolean restoreMetadataPartition,
+      boolean restoreDataPartitions,
+      boolean dropBadPartitionEnabled) {
     Set<Integer> partitionIds = getPersistedPartitionIds();
 
     /**
@@ -140,15 +156,47 @@ public abstract class AbstractStorageEngine<Partition extends AbstractStoragePar
 
     if (restoreDataPartitions) {
       LOGGER.info("Data partitions restore enabled. Restoring data partitions.");
-      partitionIds.stream()
-          .sorted((o1, o2) -> Integer.compare(o2, o1)) // reverse order, to minimize array resizing in {@link
-                                                       // SparseConcurrentList}
-          .forEach(this::addStoragePartitionIfAbsent);
+      // reverse order, to minimize array resizing in SparseConcurrentList
+      List<Integer> sortedPartitionIds =
+          partitionIds.stream().sorted((o1, o2) -> Integer.compare(o2, o1)).collect(Collectors.toList());
+      for (int partitionId: sortedPartitionIds) {
+        try {
+          addStoragePartitionIfAbsent(partitionId);
+        } catch (Exception e) {
+          if (!dropBadPartitionEnabled) {
+            throw e;
+          }
+          LOGGER.error(
+              "Failed to restore partition: {} for store: {}. Dropping its on-disk directory so it will be "
+                  + "re-bootstrapped from scratch via ingestion.",
+              partitionId,
+              getStoreVersionName(),
+              e);
+          try {
+            dropPartitionDirectory(partitionId);
+          } catch (Exception cleanupException) {
+            LOGGER.error(
+                "Failed to drop on-disk directory for partition: {} of store: {}.",
+                partitionId,
+                getStoreVersionName(),
+                cleanupException);
+          }
+        }
+      }
     }
   }
 
   protected final synchronized void restoreStoragePartitions() {
     restoreStoragePartitions(true, true);
+  }
+
+  /**
+   * Remove any on-disk artifacts for a partition that failed to restore. Subclasses backed by a real filesystem
+   * (e.g. RocksDB) should delete the partition directory so the partition can be re-bootstrapped from scratch.
+   * The default implementation is a no-op for in-memory engines.
+   */
+  protected void dropPartitionDirectory(int partitionId) {
+    // No-op for engines without on-disk state.
   }
 
   // For testing purpose only.
