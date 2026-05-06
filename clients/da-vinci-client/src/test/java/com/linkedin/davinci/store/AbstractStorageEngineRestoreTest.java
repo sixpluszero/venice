@@ -28,6 +28,7 @@ public class AbstractStorageEngineRestoreTest {
     private final Set<Integer> persistedPartitionIds;
     private final Set<Integer> failingPartitionIds;
     private final Set<Integer> droppedPartitionDirectories = new HashSet<>();
+    private boolean shouldDropOverride = true;
 
     TestStorageEngine(Set<Integer> persistedPartitionIds, Set<Integer> failingPartitionIds) {
       super(
@@ -62,8 +63,24 @@ public class AbstractStorageEngineRestoreTest {
       droppedPartitionDirectories.add(partitionId);
     }
 
+    @Override
+    protected boolean shouldDropPartitionOnRestoreFailure(int partitionId, Throwable cause) {
+      return shouldDropOverride;
+    }
+
+    void setShouldDropOverride(boolean shouldDropOverride) {
+      this.shouldDropOverride = shouldDropOverride;
+    }
+
     void invokeRestoreStoragePartitions(boolean dropBadPartitionEnabled) {
       restoreStoragePartitions(false, true, dropBadPartitionEnabled);
+    }
+
+    void invokeRestoreStoragePartitions(
+        boolean restoreMetadataPartition,
+        boolean restoreDataPartitions,
+        boolean dropBadPartitionEnabled) {
+      restoreStoragePartitions(restoreMetadataPartition, restoreDataPartitions, dropBadPartitionEnabled);
     }
 
     Set<Integer> getDroppedPartitionDirectories() {
@@ -178,6 +195,37 @@ public class AbstractStorageEngineRestoreTest {
         engine.getDroppedPartitionDirectories(),
         Collections.singleton(1),
         "Only the failed partition's directory should be dropped.");
+  }
+
+  @Test
+  public void testMetadataPartitionFailureAlwaysPropagates() {
+    Set<Integer> persisted = new HashSet<>();
+    persisted.add(0);
+    persisted.add(1);
+    Set<Integer> failing = new HashSet<>();
+    failing.add(AbstractStorageEngine.METADATA_PARTITION_ID);
+    TestStorageEngine engine = new TestStorageEngine(persisted, failing);
+
+    Assert.assertThrows(VeniceException.class, () -> engine.invokeRestoreStoragePartitions(true, true, true));
+    Assert.assertTrue(
+        engine.getDroppedPartitionDirectories().isEmpty(),
+        "Metadata partition failure must propagate without dropping anything, even when the flag is on.");
+  }
+
+  @Test
+  public void testRestoreRethrowsWhenShouldDropPredicateReturnsFalse() {
+    Set<Integer> persisted = new HashSet<>();
+    persisted.add(0);
+    persisted.add(1);
+    Set<Integer> failing = new HashSet<>();
+    failing.add(1);
+    TestStorageEngine engine = new TestStorageEngine(persisted, failing);
+    engine.setShouldDropOverride(false);
+
+    Assert.assertThrows(VeniceException.class, () -> engine.invokeRestoreStoragePartitions(true));
+    Assert.assertTrue(
+        engine.getDroppedPartitionDirectories().isEmpty(),
+        "When the subclass classifies the cause as not-drop-eligible, the failure must propagate.");
   }
 
   @Test

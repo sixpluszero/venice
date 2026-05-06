@@ -163,7 +163,7 @@ public abstract class AbstractStorageEngine<Partition extends AbstractStoragePar
         try {
           addStoragePartitionIfAbsent(partitionId);
         } catch (Exception e) {
-          if (!dropBadPartitionEnabled) {
+          if (!dropBadPartitionEnabled || !shouldDropPartitionOnRestoreFailure(partitionId, e)) {
             throw e;
           }
           LOGGER.error(
@@ -197,6 +197,20 @@ public abstract class AbstractStorageEngine<Partition extends AbstractStoragePar
    */
   protected void dropPartitionDirectory(int partitionId) {
     // No-op for engines without on-disk state.
+  }
+
+  /**
+   * Whether a restore failure for the given data partition is safe to handle by dropping its on-disk state.
+   *
+   * Subclasses should return true only when the cause indicates state that is local to this partition (e.g. RocksDB
+   * Corruption, or an IO error reporting that a partition file went missing) — not for environmental failures such
+   * as disk full, permission denied, or a lock held by another process, where dropping would amplify the problem
+   * and could mask serious infra issues.
+   *
+   * The default returns true to preserve behavior for engines that have no way to introspect the cause.
+   */
+  protected boolean shouldDropPartitionOnRestoreFailure(int partitionId, Throwable cause) {
+    return true;
   }
 
   // For testing purpose only.
